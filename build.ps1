@@ -1,21 +1,52 @@
-# 設定版本與下載連結
-$version = "7.5.4"
-$downloadUrl = "https://github.com"
-$extractPath = ".\App\PowerShell"
-$zipFile = "powershell.zip"
+# =================================================================
+# PowerShell Portable 7.5.4 建置腳本
+# 來源: https://github.com
+# =================================================================
 
-# 1. 建立必要目錄
-Write-Host "--- 正在建立目錄結構 ---" -ForegroundColor Cyan
-New-Item -ItemType Directory -Force -Path $extractPath, ".\Data", ".\Other\Help"
+$Version = "7.5.4"
+$Architecture = "x64" # 可改為 x86 或 arm64
+$ZipName = "PowerShell-$Version-win-$Architecture.zip"
+$Url = "https://github.com"
 
-# 2. 下載 PowerShell 核心檔案
-Write-Host "--- 正在從 GitHub 下載 PowerShell v$version ---" -ForegroundColor Cyan
-Invoke-WebRequest -Uri $downloadUrl -OutFile $zipFile
+$RootPath = Get-Location
+$AppPath = Join-Path $RootPath "App\PowerShell"
+$TempZip = Join-Path $RootPath "temp_powershell.zip"
 
-# 3. 解壓縮
-Write-Host "--- 正在解壓縮檔案至 $extractPath ---" -ForegroundColor Cyan
-Expand-Archive -Path $zipFile -DestinationPath $extractPath -Force
+Write-Host ">>> 開始建置 PowerShell Portable v$Version ($Architecture) <<<" -ForegroundColor Cyan
 
-# 4. 清理暫存檔
-Remove-Item $zipFile
-Write-Host "--- 準備就緒！現在你可以開啟 PortableApps 工具進行封裝 ---" -ForegroundColor Green
+# 1. 建立必要的 PortableApps 目錄結構
+$Dirs = @("App\PowerShell", "App\AppInfo\Launcher", "Data", "Other\Help")
+foreach ($dir in $Dirs) {
+    $target = Join-Path $RootPath $dir
+    if (!(Test-Path $target)) {
+        New-Item -ItemType Directory -Path $target -Force | Out-Null
+        Write-Host "[建立目錄] $dir" -ForegroundColor Gray
+    }
+}
+
+# 2. 下載官方 ZIP
+Write-Host "[下載中] 正在從 GitHub 取得 $ZipName..." -ForegroundColor Yellow
+try {
+    Invoke-WebRequest -Uri $Url -OutFile $TempZip -ErrorAction Stop
+} catch {
+    Write-Error "下載失敗，請檢查網路或版本號是否存在。"
+    exit
+}
+
+# 3. 解壓縮並清理
+Write-Host "[解壓中] 正在部署至 $AppPath..." -ForegroundColor Yellow
+if (Test-Path $AppPath) { Remove-Item "$AppPath\*" -Recurse -Force }
+Expand-Archive -Path $TempZip -DestinationPath $AppPath -Force
+Remove-Item $TempZip
+
+# 4. 建立標記檔案 (選配，紀錄版本來源)
+$ReleaseInfo = @{
+    Version = $Version
+    Source = "https://github.com"
+    BuildDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+}
+$ReleaseInfo | SharpYaml.Serialization.Serializer | Out-Null # 若無套件則略過
+$ReleaseInfo | ConvertTo-Json | Out-File (Join-Path $AppPath "portable_info.json")
+
+Write-Host "`n[完成] 檔案已準備就緒！" -ForegroundColor Green
+Write-Host "現在請執行 PortableApps.com Installer 封裝 .paf.exe" -ForegroundColor White
